@@ -62,7 +62,7 @@ def get_sdist(data):
 
 
 def get_package_metadata(name):
-    url = 'https://pypi.python.org/pypi/{}/json'.format(name)
+    url = f'https://pypi.python.org/pypi/{name}/json'
     with request.urlopen(url) as f:
         data = json.loads(f.read().decode('utf-8'))
     return data
@@ -116,7 +116,7 @@ def version_parse(version):
     newv = None
     veq = None
     for v in vdep:
-        if v[0] == '>' or v[0] == '=':
+        if v[0] in ['>', '=']:
             if v[1] == '=':
                 newv = v[2:]
                 veq = True
@@ -127,21 +127,16 @@ def version_parse(version):
     if not parse_version(version) > parse_version('0'):
         version = '>=0'
     else:
-        if veq == True:
-            version = ">=" + version
-        else:
-            version = ">" + version
+        version = f">={version}" if veq == True else f">{version}"
     return version
 
 def get_minimum(data):
-    supported = list(version_iter(data))
-    supported.sort()
-
-    if len(supported) == 0:
+    supported = sorted(version_iter(data))
+    if not supported:
         return None
     elif len(supported) == 1:
         if supported[0][1] == -1:
-            return "%s" % supported[0][0]
+            return f"{supported[0][0]}"
         return "%s.%s" % supported[0]
 
     # FreeBSD lowest supported of v2
@@ -150,29 +145,25 @@ def get_minimum(data):
     else:
         lowest = supported[0]
 
-    if lowest[1] == -1:
-        ver = "%s" % lowest[0]
-    else:
-        ver = "%s.%s" % lowest
-
+    ver = f"{lowest[0]}" if lowest[1] == -1 else "%s.%s" % lowest
     others = []
     for x in supported:
         if x[1] == -1:
-            others.append("%s" % x[0])
+            others.append(f"{x[0]}")
         else:
             others.append("%s.%s" % x)
 
-    return "%s+ # %s" % (ver, ", ".join(others))
+    return f'{ver}+ # {", ".join(others)}'
 
 def gen_dep(pkg):
     ports = FreeBSD_ports()
-    portpath = ports.find_portdir("py37-" + pkg)
+    portpath = ports.find_portdir(f"py37-{pkg}")
     if portpath is None:
-        portpath = "XXX/py-" + pkg
+        portpath = f"XXX/py-{pkg}"
     return portpath
 
 def add(o, k, v):
-    o.write("%s=" % k)
+    o.write(f"{k}=")
     if len(k) < 7:
         o.write('\t')
     o.write("\t%s\n" % v)
@@ -183,7 +174,7 @@ def generate_makefile(data, path=os.getcwd(), name=None, email=None):
     o = StringIO()
     o.write("# Created by: ")
     if name is not None and email is not None:
-        o.write("%s <%s>" % (name, email))
+        o.write(f"{name} <{email}>")
     o.write("\n# $FreeBSD$\n\n")
 
     add(o, "PORTNAME", info['name'].lower())
@@ -198,7 +189,7 @@ def generate_makefile(data, path=os.getcwd(), name=None, email=None):
     else:
         add(o, "MAINTAINER", email)
     summary = info.get('summary', '# FILL ME')
-    add(o, "COMMENT", "{}".format(summary.capitalize().rstrip('.')))
+    add(o, "COMMENT", f"{summary.capitalize().rstrip('.')}")
     o.write('\n')
 
     if info.get('licfile', None):
@@ -219,7 +210,7 @@ def generate_makefile(data, path=os.getcwd(), name=None, email=None):
             version = version_parse(str(x.specifier))
 
             if "extra" in str(x.marker):
-                print("%s has extra info: %s" % (pkg, x.marker))
+                print(f"{pkg} has extra info: {x.marker}")
 
             portpath = gen_dep(pkg)
             d.append("${PYTHON_PKGNAMEPREFIX}%s%s:%s@${PY_FLAVOR}" % (
@@ -228,9 +219,8 @@ def generate_makefile(data, path=os.getcwd(), name=None, email=None):
         add(o, 'RUN_DEPENDS', ' \\\n\t\t'.join(d))
         o.write('\n')
 
-    min_py = get_minimum(data)
-    if min_py:
-        add(o, "USES", "python:%s" % min_py)
+    if min_py := get_minimum(data):
+        add(o, "USES", f"python:{min_py}")
     else:
         add(o, "USES", "python")
 
@@ -307,7 +297,7 @@ def parse_dot_porttools(f):
             val = val.strip()
             if key == "EMAIL":
                 config['email'] = val[1:-1]
-            if key == "FULLNAME":
+            elif key == "FULLNAME":
                 config['name'] = val[1:-1]
         except:
             pass
@@ -336,12 +326,12 @@ def main():
         regen = False
         data = get_package_metadata(arg)
         name = data['info']['name']
-        print("[-] Generating files for %s..." % name)
+        print(f"[-] Generating files for {name}...")
 
         if name.lower().startswith('py-'):
             name = name[3:]
 
-        path = abspath(join(base, 'py-%s' % name.lower()))
+        path = abspath(join(base, f'py-{name.lower()}'))
         os.makedirs(path, exist_ok=True)
 
         print("[-] Generating Makefile")
@@ -361,8 +351,7 @@ def main():
         extract_source(join(distdir, src), distdir)
 
         src_dir = join(distdir, src.rstrip('.tar.gz'))
-        license_data = attempt_detect_license(src_dir)
-        if license_data:
+        if license_data := attempt_detect_license(src_dir):
             update_license_data(data, license_data)
             print("[-] Updating data with correct license")
             regen = True
@@ -373,12 +362,12 @@ def main():
             print("[-] Regenerating makefile with new data")
             generate_makefile(data, path, **user)
 
-        print("[*] GENERATED: %s" % name)
+        print(f"[*] GENERATED: {name}")
 
     if len(no_src):
         print('[!] The following packages had no source dist:')
         for src in no_src:
-            print('  - %s' % src)
+            print(f'  - {src}')
 
 if __name__ == "__main__":
     main()
